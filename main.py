@@ -7,11 +7,16 @@ import os
 import chromadb
 from face_utils import get_face_embeddings
 
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
+
 app = FastAPI(title="ClickMe API")
 
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs("clickme_db", exist_ok=True)
 
-# Frontend se calls allow karne ke liye
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,17 +24,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-client = chromadb.PersistentClient(path="./clickme_db")
-collection = client.get_or_create_collection(name="event_faces")
+_client = None
+_collection = None
 
-UPLOAD_DIR = "uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+def get_collection():
+    global _client, _collection
+    if _collection is None:
+        _client = chromadb.PersistentClient(path="./clickme_db")
+        _collection = _client.get_or_create_collection(name="event_faces")
+    return _collection
 
 
 @app.post("/upload-event-photos")
 async def upload_event_photos(event_id: str = Form(...), files: list[UploadFile] = File(...)):
     """Photographer event ki saari photos yahan upload karega"""
     event_id = event_id.strip()
+    col = get_collection()
     processed = 0
     for file in files:
         save_path = os.path.join(UPLOAD_DIR, file.filename)
@@ -39,7 +49,7 @@ async def upload_event_photos(event_id: str = Form(...), files: list[UploadFile]
         faces = get_face_embeddings(save_path)
         for i, face in enumerate(faces):
             doc_id = f"{event_id}_{file.filename}_{i}"
-            collection.add(
+            col.add(
                 ids=[doc_id],
                 embeddings=[face["embedding"].tolist()],
                 metadatas=[{"event_id": event_id, "filename": file.filename}]
@@ -64,7 +74,8 @@ async def find_my_photos(event_id: str = Form(...), selfie: UploadFile = File(..
     guest_embedding = guest_faces[0]["embedding"].tolist()
     effective_threshold = 0.85 if threshold > 10.0 else threshold
 
-    results = collection.query(
+    col = get_collection()
+    results = col.query(
         query_embeddings=[guest_embedding],
         n_results=50,
         where={"event_id": event_id}
@@ -90,4 +101,3 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run(app, host="0.0.0.0", port=port)
-
