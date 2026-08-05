@@ -465,6 +465,49 @@ function setGuestStatus(msg, developing=false){
   el.classList.toggle('developing', developing);
 }
 
+function compressImage(fileOrBlob, fileName = 'image.jpg', maxDim = 1280, quality = 0.82) {
+  return new Promise((resolve) => {
+    if (!(fileOrBlob instanceof Blob)) {
+      resolve(fileOrBlob);
+      return;
+    }
+    const img = new Image();
+    const url = URL.createObjectURL(fileOrBlob);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let w = img.width;
+      let h = img.height;
+      if (Math.max(w, h) > maxDim) {
+        const scale = maxDim / Math.max(w, h);
+        w = Math.round(w * scale);
+        h = Math.round(h * scale);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      canvas.toBlob(
+        (blob) => {
+          if (blob) {
+            const name = fileOrBlob.name || fileName;
+            resolve(new File([blob], name, { type: 'image/jpeg' }));
+          } else {
+            resolve(fileOrBlob);
+          }
+        },
+        'image/jpeg',
+        quality
+      );
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(fileOrBlob);
+    };
+    img.src = url;
+  });
+}
+
 async function sendSelfie(fileOrBlob, filename){
   const eventId = document.getElementById('guestEventId').value.trim();
   if(!eventId){
@@ -474,9 +517,11 @@ async function sendSelfie(fileOrBlob, filename){
   setGuestStatus('Developing', true);
   document.getElementById('contactSheet').style.display = 'none';
 
+  const readyFile = await compressImage(fileOrBlob, filename);
+
   const form = new FormData();
   form.append('event_id', eventId);
-  form.append('selfie', fileOrBlob, filename);
+  form.append('selfie', readyFile, readyFile.name || filename);
   form.append('threshold', 700);
 
   try{
@@ -570,9 +615,11 @@ async function uploadEventPhotos(){
     const file = selectedFiles[i];
     setPhotoStatus(`Developing ${i+1} of ${totalFiles}: ${file.name}`, true);
 
+    const readyFile = await compressImage(file, file.name);
+
     const form = new FormData();
     form.append('event_id', eventId);
-    form.append('files', file);
+    form.append('files', readyFile, readyFile.name || file.name);
 
     try{
       const res = await fetch(`${API_BASE}/upload-event-photos`, { method:'POST', body: form });
