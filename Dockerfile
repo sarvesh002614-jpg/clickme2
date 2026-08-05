@@ -2,6 +2,7 @@ FROM python:3.10-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
+ENV ANONYMIZED_TELEMETRY=False
 
 # Install system dependencies required for OpenCV
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -28,4 +29,4 @@ RUN python -c "import insightface; app = insightface.app.FaceAnalysis(name='buff
 
 EXPOSE 10000
 
-CMD ["python", "main.py"]
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-10000}"]

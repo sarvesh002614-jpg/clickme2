@@ -83,4 +83,11 @@ async def find_my_photos(event_id: str = Form(...), selfie: UploadFile = File(..
 def root():
     frontend_path = os.path.join(os.path.dirname(__file__), "clickme_frontend.html")
     with open(frontend_path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read())
+        return HTMLResponse(content=f.read())
+
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 10000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
+
