@@ -2,9 +2,18 @@ import insightface
 import cv2
 import numpy as np
 
-# Model pehli baar run hone par download hoga (thoda time lagega)
-app = insightface.app.FaceAnalysis(name='buffalo_l')
-app.prepare(ctx_id=-1, det_size=(640, 640))  # ctx_id=-1 = CPU, GPU hai to 0 karo
+app = None
+
+def get_app():
+    global app
+    if app is None:
+        # Load ONLY detection & recognition modules to fit within 512MB RAM free tier
+        app = insightface.app.FaceAnalysis(
+            name='buffalo_l',
+            allowed_modules=['detection', 'recognition']
+        )
+        app.prepare(ctx_id=-1, det_size=(640, 640))
+    return app
 
 def get_face_embeddings(image_path):
     img = cv2.imread(image_path)
@@ -15,7 +24,9 @@ def get_face_embeddings(image_path):
     if max(h, w) > 1280:
         scale = 1280.0 / max(h, w)
         img = cv2.resize(img, (int(w * scale), int(h * scale)))
-    faces = app.get(img)
+
+    face_app = get_app()
+    faces = face_app.get(img)
     results = []
     for face in faces:
         emb = face.embedding
@@ -28,10 +39,7 @@ def get_face_embeddings(image_path):
         })
     return results
 
-# Test karne ke liye
 if __name__ == "__main__":
-    test_image = "test.jpg"   # apni koi photo isi folder mein test.jpg naam se rakho
+    test_image = "test.jpg"
     faces = get_face_embeddings(test_image)
     print(f"{len(faces)} face(s) detect hue")
-    for i, f in enumerate(faces):
-        print(f"Face {i+1}: embedding shape = {f['embedding'].shape}")
