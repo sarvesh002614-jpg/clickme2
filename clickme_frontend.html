@@ -481,6 +481,11 @@ async function sendSelfie(fileOrBlob, filename){
 
   try{
     const res = await fetch(`${API_BASE}/find-my-photos`, { method:'POST', body: form });
+    if(!res.ok){
+      const text = await res.text();
+      setGuestStatus(`Server returned status ${res.status}: ${text.slice(0, 100)}`);
+      return;
+    }
     const data = await res.json();
 
     if(data.status !== 'success'){
@@ -490,7 +495,8 @@ async function sendSelfie(fileOrBlob, filename){
     renderContactSheet(data.matched_photos);
     setGuestStatus(data.matched_photos.length ? `${data.matched_photos.length} photo(s) found.` : 'No matches in this roll yet.');
   }catch(err){
-    setGuestStatus('Could not reach ClickMe server. Is the API running?');
+    console.error("Selfie error:", err);
+    setGuestStatus(`Connection error: ${err.message || 'Could not connect'}`);
   }
 }
 
