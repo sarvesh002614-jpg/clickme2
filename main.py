@@ -1,5 +1,5 @@
 from fastapi.staticfiles import StaticFiles
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 import shutil
@@ -35,33 +35,50 @@ def get_collection():
     return _collection
 
 
+def process_photo_faces(save_path: str, event_id: str, filename: str):
+    """Background task to extract and index face embeddings without blocking HTTP responses"""
+    try:
+        faces = get_face_embeddings(save_path)
+        if faces:
+            col = get_collection()
+            for i, face in enumerate(faces):
+                doc_id = f"{event_id}_{filename}_{i}"
+                col.add(
+                    ids=[doc_id],
+                    embeddings=[face["embedding"].tolist()],
+                    metadatas=[{"event_id": event_id, "filename": filename}]
+                )
+            print(f"Successfully processed {len(faces)} face(s) for {filename}")
+    except Exception as e:
+        print(f"Error processing background face task for {filename}: {e}")
+
+
 @app.post("/upload-event-photos")
-async def upload_event_photos(event_id: str = Form(...), files: list[UploadFile] = File(...)):
-    """Photographer event ki saari photos yahan upload karega"""
+async def upload_event_photos(background_tasks: BackgroundTasks, event_id: str = Form(...), files: list[UploadFile] = File(...)):
+    """Photographer event photos upload endpoint - responds instantly and processes in background"""
     event_id = event_id.strip()
-    col = get_collection()
-    processed = 0
+    uploaded_count = 0
+    
     for file in files:
         save_path = os.path.join(UPLOAD_DIR, file.filename)
         with open(save_path, "wb") as f:
             shutil.copyfileobj(file.file, f)
+        
+        # Schedule AI face processing in background so HTTP response is instant (no 502 timeout!)
+        background_tasks.add_task(process_photo_faces, save_path, event_id, file.filename)
+        uploaded_count += 1
 
-        faces = get_face_embeddings(save_path)
-        for i, face in enumerate(faces):
-            doc_id = f"{event_id}_{file.filename}_{i}"
-            col.add(
-                ids=[doc_id],
-                embeddings=[face["embedding"].tolist()],
-                metadatas=[{"event_id": event_id, "filename": file.filename}]
-            )
-        processed += len(faces)
-
-    return {"status": "success", "faces_processed": processed, "files_count": len(files)}
+    return {
+        "status": "success",
+        "faces_processed": uploaded_count,
+        "files_count": uploaded_count,
+        "message": "Roll received! Photos are being developed in background."
+    }
 
 
 @app.post("/find-my-photos")
 async def find_my_photos(event_id: str = Form(...), selfie: UploadFile = File(...), threshold: float = Form(0.85)):
-    """Guest selfie upload karega aur matching photos milengi"""
+    """Guest selfie search endpoint"""
     event_id = event_id.strip()
     selfie_path = os.path.join(UPLOAD_DIR, f"selfie_{selfie.filename}")
     with open(selfie_path, "wb") as f:
